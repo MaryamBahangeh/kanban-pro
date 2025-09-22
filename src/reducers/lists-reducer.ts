@@ -1,111 +1,150 @@
+import type { Draft } from "immer";
+
+import { arrayMove } from "@dnd-kit/sortable";
+
 import type { ListItemType } from "@/types/list-item.ts";
 import type { ListType } from "@/types/list.ts";
 
-type Action =
+export type ListsAction =
   | {
-      type: "created";
-      listId: string;
+      type: "list_created";
+      list: ListType;
+    }
+  | {
+      type: "list_edited";
+      listIndex: number;
+      list: Partial<ListType>;
+    }
+  | {
+      type: "list_removed";
+      listIndex: number;
+    }
+  | {
+      type: "list_dragged_end";
+      activeListIndex: number;
+      overListIndex: number;
+    }
+  | {
+      type: "item_created";
+      listIndex: number;
       item: ListItemType;
     }
   | {
-      type: "moved";
-      fromListId: string;
-      itemId: string;
-      toListId: string;
+      type: "item_edited";
+      listIndex: number;
+      itemIndex: number;
+      item: Partial<ListItemType>;
     }
   | {
-      type: "removed";
-      listId: string;
-      itemId: string;
+      type: "item_removed";
+      listIndex: number;
+      itemIndex: number;
+    }
+  | {
+      type: "item_dragged_over";
+      activeListIndex: number;
+      activeItemIndex: number;
+      overListIndex: number;
+      overItemIndex?: number;
+    }
+  | {
+      type: "item_dragged_end";
+      activeListIndex: number;
+      activeItemIndex: number;
+      overItemIndex: number;
     };
 
-export function listsReducer(state: ListType[], action: Action): ListType[] {
+export function listsReducer(
+  draft: Draft<ListType[]>,
+  action: ListsAction,
+): void {
   switch (action.type) {
-    case "created": {
-      const listIndex = state.findIndex((list) => list.id === action.listId);
+    case "list_created": {
+      draft.push(action.list);
 
-      if (listIndex === -1) {
-        console.error("Cannot find desired list.");
-        return state;
+      return;
+    }
+    case "list_edited": {
+      draft[action.listIndex] = { ...draft[action.listIndex], ...action.list };
+
+      return;
+    }
+    case "list_removed": {
+      draft.splice(action.listIndex, 1);
+
+      return;
+    }
+    case "list_dragged_end": {
+      const { activeListIndex, overListIndex } = action;
+
+      if (activeListIndex === overListIndex) {
+        return;
       }
 
-      const clone = [...state];
-      const list = {
-        ...clone[listIndex],
-        items: [...clone[listIndex].items],
-      };
+      const activeList = draft[activeListIndex];
 
+      draft.splice(activeListIndex, 1);
+      draft.splice(overListIndex, 0, activeList);
+
+      return;
+    }
+    case "item_created": {
+      const list = draft[action.listIndex];
       list.items.push(action.item);
 
-      clone[listIndex] = list;
-      return clone;
+      return;
     }
-    case "moved": {
-      const fromListIndex = state.findIndex(
-        (list) => list.id === action.fromListId,
-      );
-      const toListIndex = state.findIndex(
-        (list) => list.id === action.toListId,
-      );
+    case "item_edited": {
+      const list = draft[action.listIndex];
 
-      if (fromListIndex === -1 || toListIndex === -1) {
-        console.error("Cannot find desired list.");
-        return state;
-      }
-
-      const clone = [...state];
-      const fromList = {
-        ...clone[fromListIndex],
-        items: [...clone[fromListIndex].items],
-      };
-      const toList = {
-        ...clone[toListIndex],
-        items: [...clone[toListIndex].items],
+      list.items[action.itemIndex] = {
+        ...list.items[action.itemIndex],
+        ...action.item,
       };
 
-      const itemIndex = fromList.items.findIndex(
-        (item) => item.id === action.itemId,
-      );
-
-      if (itemIndex === -1) {
-        console.error("Cannot find desired item.");
-        return state;
-      }
-
-      const [item] = fromList.items.splice(itemIndex, 1);
-      toList.items.push(item);
-
-      clone[fromListIndex] = fromList;
-      clone[toListIndex] = toList;
-      return clone;
+      return;
     }
-    case "removed": {
-      const listIndex = state.findIndex((list) => list.id === action.listId);
+    case "item_removed": {
+      const list = draft[action.listIndex];
+      list.items.splice(action.itemIndex, 1);
 
-      if (listIndex === -1) {
-        console.error("Cannot find desired list.");
-        return state;
+      return;
+    }
+    case "item_dragged_over": {
+      const { activeListIndex, activeItemIndex, overListIndex, overItemIndex } =
+        action;
+
+      if (activeListIndex === overListIndex) {
+        return;
       }
 
-      const clone = [...state];
-      const list = {
-        ...clone[listIndex],
-        items: [...clone[listIndex].items],
-      };
+      const activeList = draft[activeListIndex];
+      const activeItem = activeList.items[activeItemIndex];
+      const overList = draft[overListIndex];
 
-      const itemIndex = list.items.findIndex(
-        (item) => item.id === action.itemId,
+      const newIndex = overItemIndex ?? overList.items.length;
+
+      overList.items.splice(newIndex, 0, activeItem);
+      activeList.items.splice(activeItemIndex, 1);
+
+      return;
+    }
+    case "item_dragged_end": {
+      const { activeListIndex, activeItemIndex, overItemIndex } = action;
+
+      if (activeItemIndex === overItemIndex) {
+        return;
+      }
+
+      const activeList = draft[activeListIndex];
+
+      activeList.items = arrayMove(
+        activeList.items,
+        activeItemIndex,
+        overItemIndex,
       );
 
-      if (itemIndex === -1) {
-        console.error("Cannot find desired item.");
-        return state;
-      }
-
-      list.items.splice(itemIndex, 1);
-
-      clone[listIndex] = list;
-      return clone;
+      return;
     }
     default: {
       throw new Error("Unknown action.");
